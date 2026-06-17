@@ -138,6 +138,14 @@
       display: flex; align-items: center; gap: 5px;
     }
     .add-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .scene-btn {
+      padding: 6px 14px; border-radius: 8px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--dim); font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all .2s; letter-spacing: .05em;
+    }
+    .scene-btn:hover { border-color: var(--orange); color: var(--orange); }
+    .tbl-head-right { display: flex; align-items: center; gap: 6px; }
 
     /* table */
     .table-section {
@@ -299,7 +307,12 @@
 <div class="table-section">
   <div class="tbl-head-row">
     <span class="tbl-title">Songs</span>
-    <button class="add-btn" onclick="apiAdd()">＋ 곡 추가</button>
+    <div class="tbl-head-right">
+      <button class="scene-btn" onclick="apiExport()">내보내기</button>
+      <button class="scene-btn" onclick="document.getElementById('import-input').click()">씬 불러오기</button>
+      <input type="file" id="import-input" accept=".json" style="display:none" onchange="apiImport(this)">
+      <button class="add-btn" onclick="apiAdd()">＋ 곡 추가</button>
+    </div>
   </div>
   <div class="tbl-scroll">
     <table>
@@ -625,6 +638,29 @@
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
     });
+  }
+
+  function apiExport() {
+    window.location.href = '/api/export';
+  }
+
+  function apiImport(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      let data;
+      try { data = JSON.parse(e.target.result); } catch { alert('파일 형식 오류'); return; }
+      fetch('/api/import', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+      }).then(r => r.json()).then(d => {
+        if (d.error) alert('불러오기 실패: ' + d.error);
+      });
+    };
+    reader.readAsText(file);
+    input.value = '';
   }
 
   function esc(s) {

@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
 from flask_socketio import SocketIO
 
 from config import (
@@ -425,6 +425,48 @@ def api_volume():
     _update_volume_leds()
     emit_state()
     return jsonify({'ok': True})
+
+
+@app.route('/api/export')
+def api_export():
+    data = json.dumps(songs, ensure_ascii=False, indent=2)
+    return Response(
+        data,
+        mimetype='application/json',
+        headers={'Content-Disposition': 'attachment; filename="launchpad-bpm-scene.json"'}
+    )
+
+
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    global songs
+    try:
+        data = request.get_json(force=True)
+        if not isinstance(data, list):
+            return jsonify({'error': '잘못된 형식입니다'}), 400
+        for s in data:
+            if not isinstance(s, dict) or 'name' not in s or 'bpm' not in s:
+                return jsonify({'error': '곡 데이터 형식 오류'}), 400
+            s.setdefault('time_sig', '4/4')
+        # ID 재할당
+        max_id = max((s.get('id', 0) for s in data), default=0)
+        for s in data:
+            if 'id' not in s:
+                max_id += 1
+                s['id'] = max_id
+        songs = data
+        reassign_pads()
+        rebuild_pad_map()
+        save_songs()
+        if launchpad.connected:
+            launchpad.clear()
+            init_leds()
+            update_leds()
+        emit_songs()
+        emit_state()
+        return jsonify({'ok': True, 'count': len(songs)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 
 @app.route('/api/debug/midi')
