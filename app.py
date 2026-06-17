@@ -435,7 +435,26 @@ def api_debug_midi():
         outputs = mido.get_output_names()
     except Exception as e:
         inputs, outputs = [], [f'ERROR: {e}']
-    return jsonify({'inputs': inputs, 'outputs': outputs})
+    return jsonify({
+        'inputs':    inputs,
+        'outputs':   outputs,
+        'connected': launchpad.connected,
+    })
+
+
+@app.route('/api/reconnect', methods=['POST'])
+def api_reconnect():
+    try:
+        launchpad.stop()
+        time.sleep(0.3)
+        launchpad.start()
+        state['launchpad'] = True
+        init_leds()
+        update_leds()
+        emit_state()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)})
 
 
 # ── 진입점 ───────────────────────────────────────────────

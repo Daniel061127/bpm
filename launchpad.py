@@ -1,5 +1,6 @@
 import platform
 import subprocess
+import time
 import mido
 
 # PyInstaller 번들 환경에서 백엔드 자동 탐색 실패 방지
@@ -8,6 +9,7 @@ try:
 except Exception:
     pass
 
+# Launchpad Mini MK3 Programmer Mode SysEx
 _SYSEX_PROGRAMMER = [0x00, 0x20, 0x29, 0x02, 0x0D, 0x00, 0x7F]
 
 # macOS: "Launchpad Mini MK3 LPMiniMK3 MIDI Out"
@@ -51,7 +53,6 @@ class Launchpad:
             except Exception:
                 pass
         elif platform.system() == 'Windows':
-            # Windows는 CoreMIDI 오프라인 잔류 문제 없음 → mido 포트 목록 직접 사용
             try:
                 return bool(self._find_port(mido.get_input_names()))
             except Exception:
@@ -59,26 +60,53 @@ class Launchpad:
         return bool(self._find_port(mido.get_input_names()))
 
     def _handle_msg(self, msg):
-        if self.connected and msg.type == 'note_on' and msg.velocity > 0:
-            if self._callback:
-                self._callback(msg.note)
+        if self.connected and msg.type in ('note_on', 'note_off'):
+            # note_off 또는 velocity=0인 note_on은 무시 (버튼 릴리즈)
+            if msg.type == 'note_on' and msg.velocity > 0:
+                if self._callback:
+                    self._callback(msg.note)
+
+    def _send_programmer_mode(self):
+        """SysEx 프로그래머 모드 전환 — 3회까지 재시도"""
+        for attempt in range(3):
+            try:
+                time.sleep(0.05 * (attempt + 1))  # 포트 안정화 대기
+                self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
+                return True
+            except Exception:
+                pass
+        return False
 
     def connect(self):
-        in_name  = self._find_port(mido.get_input_names())
-        out_name = self._find_port(mido.get_output_names())
+        in_ports  = mido.get_input_names()
+        out_ports = mido.get_output_names()
+        in_name   = self._find_port(in_ports)
+        out_name  = self._find_port(out_ports)
+
         if not in_name:
             raise RuntimeError(
                 f"'{_DEVICE_NAME}' 를 찾을 수 없습니다.\n"
-                f"연결된 포트: {mido.get_input_names()}"
+                f"연결된 입력 포트: {in_ports}"
             )
+        if not out_name:
+            raise RuntimeError(
+                f"'{_DEVICE_NAME}' 출력 포트를 찾을 수 없습니다.\n"
+                f"연결된 출력 포트: {out_ports}"
+            )
+
         self._inport  = mido.open_input(in_name, callback=self._handle_msg)
         self._outport = mido.open_output(out_name)
-        try:
-            self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
-        except Exception:
-            pass  # WinMM에서 SysEx 실패해도 기본 기능은 동작
         self.connected = True
+
+        # 포트 열린 후 SysEx 전송 (프로그래머 모드)
+        self._send_programmer_mode()
+
         return in_name, out_name
+
+    def resend_programmer_mode(self):
+        """외부에서 프로그래머 모드 재전송 (재연결/복구 시 사용)"""
+        if self.connected and self._outport:
+            self._send_programmer_mode()
 
     def set_callback(self, cb):
         self._callback = cb
