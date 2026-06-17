@@ -1,0 +1,123 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install flask flask-socketio mido python-rtmidi PySide6 pyinstaller
+
+      - name: Build .exe
+        run: |
+          pyinstaller `
+            --name "Launchpad BPM" `
+            --windowed `
+            --add-data "templates;templates" `
+            --hidden-import engineio.async_drivers.threading `
+            --hidden-import flask_socketio `
+            --hidden-import mido.backends.rtmidi `
+            --hidden-import PySide6.QtWebEngineWidgets `
+            --hidden-import PySide6.QtWebEngineCore `
+            --noconfirm `
+            main.py
+
+      - name: Zip exe folder
+        run: |
+          Compress-Archive -Path "dist\Launchpad BPM" -DestinationPath "Launchpad-BPM-Windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: Launchpad-BPM-Windows.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install flask flask-socketio mido python-rtmidi PySide6 pyinstaller
+
+      - name: Build .app
+        run: |
+          python3 -m PyInstaller \
+            --name "Launchpad BPM" \
+            --windowed \
+            --add-data "templates:templates" \
+            --hidden-import engineio.async_drivers.threading \
+            --hidden-import flask_socketio \
+            --hidden-import mido.backends.rtmidi \
+            --hidden-import PySide6.QtWebEngineWidgets \
+            --hidden-import PySide6.QtWebEngineCore \
+            --noconfirm \
+            main.py
+
+      - name: Zip .app
+        run: |
+          cd dist
+          zip -r ../Launchpad-BPM-macOS.zip "Launchpad BPM.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: Launchpad-BPM-macOS.zip
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || 'latest' }}
+          name: Launchpad BPM Controller ${{ github.ref_name || 'latest' }}
+          body: |
+            ## Launchpad BPM Controller
+
+            Novation Launchpad Mini MK3 전용 BPM 컨트롤러
+
+            ### 다운로드
+            - **Windows**: `Launchpad-BPM-Windows.zip` 압축 해제 후 `Launchpad BPM.exe` 실행
+            - **macOS**: `Launchpad-BPM-macOS.zip` 압축 해제 후 `Launchpad BPM.app` 실행
+              - 처음 실행 시: 우클릭 → 열기
+
+            ### 기능
+            - 곡별 BPM 설정 및 런치패드 패드 매핑
+            - 마디 끝 자동 전환 (대기 중 깜빡임 표시)
+            - Fade Stop / Mute / 볼륨 컨트롤 (6행)
+            - 런치패드 자동 재연결
+
+            made by Kangyun Choi / ariseworship.kr
+          files: |
+            Launchpad-BPM-Windows.zip
+            Launchpad-BPM-macOS.zip
+          draft: false
+          prerelease: false

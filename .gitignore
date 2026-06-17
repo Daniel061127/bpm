@@ -7,3 +7,8 @@ songs.json
 nohup.out
 *.log
 .DS_Store
+
+# PyInstaller
+build/
+dist/
+*.spec

@@ -9,11 +9,12 @@ SONGS = [
     {"id": 8, "pad": 88, "name": "Song 08", "bpm": 150, "time_sig": "4/4"},
 ]
 
-FADE_PAD = 19   # 오른쪽 열 맨 아래 → fade 스탑
-MUTE_PAD = 18   # 그리드 64번째 칸 (맨 아래 오른쪽) → 뮤트
+FADE_PAD      = 19   # 오른쪽 사이드 맨 아래 → Fade
+STOP_PAD      = 29   # 오른쪽 사이드 아래서 두 번째 → Fade
+MUTE_PAD      = 18   # 그리드 8행 8열 → Mute
+INST_STOP_PAD = 28   # 뮤트(18) 바로 위 → Stop
 
-FADE_DURATION = 5.0
-MIN_FADE_BPM  = 20.0   # 미사용 (볼륨 페이드로 교체)
+FADE_DURATION = 1.0
 
 LED_OFF    = 0
 LED_GREEN  = 21
@@ -21,8 +22,10 @@ LED_ORANGE = 9
 LED_BLUE   = 45
 LED_RED    = 5
 
-# 오른쪽 열 + 뮤트 패드 = 곡 배정 제외
-RESERVED_PADS = {18, 19, 29, 39, 49, 59, 69, 79, 89}
+# 위에서 6번째 행 (31~38) → 볼륨 조절 (8단계)
+VOLUME_PADS = [31, 32, 33, 34, 35, 36, 37, 38]
+
+RESERVED_PADS = {18, 19, 28, 29, 39, 49, 59, 69, 79, 89} | set(VOLUME_PADS)
 
 ALL_GRID_PADS = [
     r * 10 + c

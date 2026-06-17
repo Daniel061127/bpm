@@ -46,7 +46,8 @@
     header h1 { font-size: 11px; font-weight: 700; letter-spacing: .2em; color: var(--gray); text-transform: uppercase; }
     .hdr-right { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--gray); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); transition: background .4s; }
-    .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.err { background: var(--red);   box-shadow: 0 0 6px var(--red); }
 
     /* status panel */
     .status-panel {
@@ -72,15 +73,32 @@
     #bpm-num.muted  { color: var(--red); }
     .bpm-lbl { font-size: 11px; color: var(--gray); letter-spacing: .25em; margin-top: 4px; }
 
-    #beat-dot {
-      display: inline-block; width: 9px; height: 9px;
-      border-radius: 50%; background: var(--green);
-      margin-left: 7px; vertical-align: middle;
-      opacity: 0; transition: opacity .05s;
+    /* 비트 표시기 */
+    .beat-dots {
+      display: flex; justify-content: center; align-items: center;
+      gap: 6px; margin-top: 10px; min-height: 16px;
     }
-    #beat-dot.fading { background: var(--orange); }
-    #beat-dot.muted  { background: var(--red); }
-    #beat-dot.pulse  { opacity: 1; }
+    .beat-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border); transition: background .05s, transform .05s, box-shadow .05s;
+    }
+    .beat-dot.accent { width: 11px; height: 11px; }
+    .beat-dot.mid    { width: 9px;  height: 9px; }
+    .beat-dot.active-accent {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      transform: scale(1.3);
+    }
+    .beat-dot.active-mid {
+      background: var(--blue);
+      box-shadow: 0 0 6px var(--blue);
+      transform: scale(1.2);
+    }
+    .beat-dot.active-lo {
+      background: var(--dim);
+      transform: scale(1.1);
+    }
+    .beat-dot.fading.active-accent { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
 
     .status-right {
       flex: 1;
@@ -206,12 +224,40 @@
     }
     .del-btn:hover { border-color: var(--red-d); color: var(--red); background: var(--red-d); }
 
+    @keyframes pending-row-pulse {
+      0%, 100% { background: rgba(255,140,0,.10); }
+      50%       { background: transparent; }
+    }
+    @keyframes pending-btn-pulse {
+      0%, 100% { background: var(--orange-d); border-color: var(--orange); color: var(--orange); }
+      50%       { background: transparent;    border-color: var(--border);  color: var(--dim); }
+    }
+    .song-row.pending { animation: pending-row-pulse .7s ease-in-out infinite; }
+    .play-btn.pending { animation: pending-btn-pulse .7s ease-in-out infinite; }
+
+    /* volume bar */
+    .vol-row {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .vol-lbl { font-size: 9px; color: var(--gray); letter-spacing: .2em; text-transform: uppercase; white-space: nowrap; }
+    .vol-segs { display: flex; gap: 3px; }
+    .vol-seg {
+      width: 16px; height: 14px; border-radius: 3px;
+      background: var(--border); cursor: pointer;
+      transition: background .12s;
+      border: 1px solid transparent;
+    }
+    .vol-seg:hover { border-color: var(--green); }
+    .vol-seg.active { background: var(--green); }
+    .vol-pct { font-size: 10px; color: var(--dim); font-family: monospace; min-width: 32px; }
+
     /* footer */
     footer {
       padding: 9px 28px; color: var(--gray);
       font-size: 10px; border-top: 1px solid var(--border);
-      display: flex; gap: 20px; flex-shrink: 0;
+      display: flex; align-items: center; gap: 20px; flex-shrink: 0;
     }
+    .footer-credit { margin-left: auto; color: var(--dim); font-size: 10px; }
   </style>
 </head>
 <body>
@@ -231,8 +277,9 @@
   </div>
 
   <div class="bpm-block">
-    <div><span id="bpm-num">---</span><span id="beat-dot"></span></div>
+    <div id="bpm-num">---</div>
     <div class="bpm-lbl">BPM</div>
+    <div class="beat-dots" id="beat-dots"></div>
   </div>
 
   <div class="status-right">
@@ -240,6 +287,11 @@
     <div class="controls">
       <button class="btn" id="stop-btn" onclick="apiStop()" disabled>Stop</button>
       <button class="btn" id="mute-btn" onclick="apiMute()" disabled>Mute</button>
+    </div>
+    <div class="vol-row">
+      <span class="vol-lbl">VOL</span>
+      <div class="vol-segs" id="vol-segs"></div>
+      <span class="vol-pct" id="vol-pct">100%</span>
     </div>
   </div>
 </div>
@@ -263,28 +315,165 @@
 </div>
 
 <footer>
-  <span>그리드 패드: 곡 재생 / crossfade</span>
-  <span>패드 19 (우측 하단 버튼): Fade Stop</span>
-  <span>패드 18 (64번째 칸): Mute</span>
+  <span>그리드 패드: 곡 재생 (마디 끝 전환)</span>
+  <span>패드 19·29: Fade Stop (1초)</span>
+  <span>패드 28: Stop | 패드 18: Mute</span>
+  <span>6행: 볼륨 (8단계)</span>
+  <span class="footer-credit">made by Kangyun Choi / ariseworship.kr</span>
 </footer>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
+  // ── Web Audio API ────────────────────────────────────────
+  let audioCtx = null;
+
+  function getCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function click(freq, vol, dur = 0.06) {
+    if (vol <= 0) return;
+    const ctx = getCtx();
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    g.gain.setValueAtTime(Math.min(vol, 1.0), ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  }
+
+  function playBeat(bi, timeSig, vol) {
+    if (vol <= 0) return;
+    const v = vol * (cur.volume ?? 1.0);
+    if (bi === 0)                            click(1600, 0.80 * v);
+    else if (timeSig === '6/8' && bi === 3)  click(1200, 0.55 * v);
+    else                                     click(900,  0.38 * v);
+  }
+
+  // ── 비트 표시기 ──────────────────────────────────────────
+  let lastN = 0, lastTs = '';
+  let beatTimers = [];
+
+  function buildDots(n, timeSig) {
+    const container = document.getElementById('beat-dots');
+    container.innerHTML = '';
+    beatTimers.forEach(clearTimeout);
+    beatTimers = [];
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('div');
+      d.className = 'beat-dot';
+      if (i === 0) d.classList.add('accent');
+      else if (timeSig === '6/8' && i === 3) d.classList.add('mid');
+      container.appendChild(d);
+    }
+    lastN = n; lastTs = timeSig;
+  }
+
+  function flashDots(bi, timeSig) {
+    const dots = document.getElementById('beat-dots').children;
+    if (!dots.length) return;
+
+    // 이전 활성 제거
+    for (const d of dots) d.classList.remove('active-accent','active-mid','active-lo','fading');
+
+    const d = dots[bi];
+    if (!d) return;
+    const isFading = (cur.status === 'fading');
+    if (bi === 0) {
+      d.classList.add('active-accent');
+      if (isFading) d.classList.add('fading');
+    } else if (timeSig === '6/8' && bi === 3) {
+      d.classList.add('active-mid');
+    } else {
+      d.classList.add('active-lo');
+    }
+
+    const t = setTimeout(() => {
+      d.classList.remove('active-accent','active-mid','active-lo','fading');
+    }, 100);
+    beatTimers.push(t);
+  }
+
+  // ── 상태 ─────────────────────────────────────────────────
   let songs = [];
-  let cur = {status:'stopped', muted:false, bpm:0, song_id:null, song_name:null, launchpad:false};
-  let beatTmr = null;
+  let cur   = {status:'stopped', muted:false, bpm:0, song_id:null, song_name:null, pending_song_id:null, launchpad:false, volume:1.0};
+  let hadLaunchpad = false;
 
   const socket = io();
   socket.on('connect',      () => setDot(cur.launchpad));
-  socket.on('disconnect',   () => { document.getElementById('lp-dot').className='dot'; document.getElementById('lp-lbl').textContent='서버 끊김'; });
-  socket.on('state_change', d => { cur={...cur,...d}; applyState(); });
-  socket.on('beat',         d => { cur.bpm=d.bpm; updateBpm(); flashBeat(); });
-  socket.on('songs_update', d => { songs=d; renderTable(); applyState(); });
+  socket.on('disconnect', () => {
+    document.getElementById('lp-dot').className   = 'dot err';
+    document.getElementById('lp-lbl').textContent = '서버 끊김';
+  });
+  socket.on('state_change', d => { cur = {...cur, ...d}; applyState(); });
+  socket.on('beat', d => {
+    cur.bpm = d.bpm;
+    const bi = d.beat_index || 0;
+    const ts = d.time_sig   || '4/4';
+    const n  = d.n_beats    || 4;
+    const v  = d.vol        != null ? d.vol : 1.0;
+
+    if (n !== lastN || ts !== lastTs) buildDots(n, ts);
+
+    updateBpm();
+    flashDots(bi, ts);
+    playBeat(bi, ts, v);
+  });
+  socket.on('songs_update', d => { songs = d; renderTable(); applyState(); });
 
   Promise.all([
-    fetch('/api/songs').then(r=>r.json()),
-    fetch('/api/state').then(r=>r.json()),
-  ]).then(([sd,st]) => { songs=sd; cur=st; renderTable(); applyState(); });
+    fetch('/api/songs').then(r => r.json()),
+    fetch('/api/state').then(r => r.json()),
+  ]).then(([sd, st]) => { songs = sd; cur = st; renderTable(); applyState(); });
+
+  // ── 볼륨 UI ──────────────────────────────────────────────
+  (function buildVolSegs() {
+    const c = document.getElementById('vol-segs');
+    for (let i = 1; i <= 8; i++) {
+      const s = document.createElement('div');
+      s.className = 'vol-seg';
+      s.dataset.step = i;
+      s.onclick = () => apiSetVolume(i / 8);
+      c.appendChild(s);
+    }
+  })();
+
+  function updateVolDisplay() {
+    const vol   = cur.volume ?? 1.0;
+    const level = Math.round(vol * 8);
+    const segs  = document.getElementById('vol-segs').children;
+    for (let i = 0; i < segs.length; i++) {
+      segs[i].classList.toggle('active', i < level);
+    }
+    document.getElementById('vol-pct').textContent = Math.round(vol * 100) + '%';
+  }
+
+  function apiSetVolume(vol) {
+    fetch('/api/volume', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({volume: vol}),
+    });
+  }
+
+  // 첫 번째 사용자 인터랙션으로 AudioContext 초기화
+  document.addEventListener('click', () => getCtx(), {once: true});
+
+  // 런치패드 연결 상태 주기적 확인 (3초)
+  setInterval(() => {
+    fetch('/api/state').then(r => r.json()).then(st => {
+      if (st.launchpad !== cur.launchpad) {
+        cur.launchpad = st.launchpad;
+        setDot(st.launchpad);
+      }
+    }).catch(() => {});
+  }, 3000);
 
   function applyState() {
     const badge   = document.getElementById('status-badge');
@@ -295,72 +484,89 @@
     nameEl.textContent = cur.song_name || '---';
     updateBpm();
     setDot(cur.launchpad);
+    updateVolDisplay();
 
     const active = cur.status !== 'stopped';
     stopBtn.disabled = !active;
     muteBtn.disabled = !active;
-    stopBtn.className = 'btn' + (cur.status==='fading' ? ' stop-fading' : '');
+    stopBtn.className = 'btn' + (cur.status === 'fading' ? ' stop-fading' : '');
     muteBtn.className = 'btn' + (cur.muted ? ' muted-active' : '');
 
-    let bt='STOPPED', bc='';
-    if (cur.muted && active)          { bt='MUTED';    bc='muted';   }
-    else if (cur.status==='playing')  { bt='PLAYING';  bc='playing'; }
-    else if (cur.status==='fading')   { bt='FADING…'; bc='fading';  }
-    badge.textContent=bt; badge.className=bc;
+    if (!active) {
+      document.getElementById('beat-dots').innerHTML = '';
+      lastN = 0; lastTs = '';
+    }
+
+    let bt = 'STOPPED', bc = '';
+    if (cur.muted && active)         { bt = 'MUTED';   bc = 'muted';   }
+    else if (cur.status === 'playing') { bt = 'PLAYING'; bc = 'playing'; }
+    else if (cur.status === 'fading')  { bt = 'FADING…'; bc = 'fading';  }
+    badge.textContent = bt;
+    badge.className   = bc;
 
     document.querySelectorAll('.song-row').forEach(tr => {
-      const id = parseInt(tr.dataset.id);
-      const on = (id === cur.song_id);
-      tr.classList.toggle('active', on);
-      tr.querySelector('.play-btn').classList.toggle('active', on);
+      const id      = parseInt(tr.dataset.id);
+      const on      = (id === cur.song_id);
+      const pending = (!on && id === cur.pending_song_id);
+      tr.classList.toggle('active',  on);
+      tr.classList.toggle('pending', pending);
+      tr.querySelector('.play-btn').classList.toggle('active',  on);
+      tr.querySelector('.play-btn').classList.toggle('pending', pending);
       const st = tr.querySelector('.row-st');
       if (on) {
-        if (cur.muted)               { st.textContent='⊘ Muted';   st.className='row-st muted';   }
-        else if (cur.status==='playing') { st.textContent='▶ Playing'; st.className='row-st playing'; }
-        else if (cur.status==='fading')  { st.textContent='⟳ Fading';  st.className='row-st fading';  }
-        else                         { st.textContent='●';          st.className='row-st';         }
-      } else { st.textContent='●'; st.className='row-st'; }
+        if (cur.muted)                     { st.textContent = '⊘ Muted';   st.className = 'row-st muted';   }
+        else if (cur.status === 'playing') { st.textContent = '▶ Playing'; st.className = 'row-st playing'; }
+        else if (cur.status === 'fading')  { st.textContent = '⟳ Fading';  st.className = 'row-st fading';  }
+        else                               { st.textContent = '●';          st.className = 'row-st';         }
+      } else if (pending) {
+        st.textContent = '⟳ 대기중'; st.className = 'row-st fading';
+      } else {
+        st.textContent = '●'; st.className = 'row-st';
+      }
     });
   }
 
   function updateBpm() {
     const el = document.getElementById('bpm-num');
     el.textContent = cur.bpm > 0 ? Math.round(cur.bpm) : '---';
-    el.className = cur.muted ? 'muted' : (cur.status==='fading' ? 'fading' : '');
-    const d = document.getElementById('beat-dot');
-    d.className = cur.muted ? 'muted' : (cur.status==='fading' ? 'fading' : '');
+    el.className   = cur.muted ? 'muted' : (cur.status === 'fading' ? 'fading' : '');
   }
 
   function setDot(on) {
-    document.getElementById('lp-dot').className = 'dot'+(on?' on':'');
-    document.getElementById('lp-lbl').textContent = on ? '런치패드 연결됨' : '런치패드 없음';
-  }
-
-  function flashBeat() {
-    const d = document.getElementById('beat-dot');
-    d.classList.add('pulse');
-    clearTimeout(beatTmr);
-    beatTmr = setTimeout(()=>d.classList.remove('pulse'), 80);
+    const dot = document.getElementById('lp-dot');
+    const lbl = document.getElementById('lp-lbl');
+    if (on) {
+      hadLaunchpad = true;
+      dot.className   = 'dot on';
+      lbl.textContent = '런치패드 연결됨';
+    } else if (hadLaunchpad) {
+      dot.className   = 'dot err';
+      lbl.textContent = '런치패드 연결 끊김';
+    } else {
+      dot.className   = 'dot';
+      lbl.textContent = '런치패드 없음';
+    }
   }
 
   // ── 테이블 렌더링 ──────────────────────────────────────
-  const TS_OPTS = ['4/4','3/4','2/4','6/8'];
+  const TS_OPTS = ['4/4', '3/4', '2/4', '6/8'];
 
   function renderTable() {
-    const tbody = document.getElementById('tbody');
-    const focRow   = document.activeElement?.closest('tr')?.dataset?.id;
-    const focField = document.activeElement?.dataset?.field;
+    const tbody   = document.getElementById('tbody');
+    const focRow  = document.activeElement?.closest('tr')?.dataset?.id;
+    const focFld  = document.activeElement?.dataset?.field;
 
     tbody.innerHTML = '';
     songs.forEach((song, i) => {
       const tsOpts = TS_OPTS.map(v =>
-        `<option value="${v}"${(song.time_sig||'4/4')===v?' selected':''}>${v}</option>`
+        `<option value="${v}"${(song.time_sig || '4/4') === v ? ' selected' : ''}>${v}</option>`
       ).join('');
 
       const tr = document.createElement('tr');
-      tr.className='song-row'; tr.dataset.id=song.id;
-      tr.innerHTML = `
-        <td class="td-num">${i+1}</td>
+      tr.className  = 'song-row';
+      tr.dataset.id = song.id;
+      tr.innerHTML  = `
+        <td class="td-num">${i + 1}</td>
         <td class="td-name">
           <input class="editable" data-field="name" value="${esc(song.name)}"
             onblur="save(${song.id},'name',this.value)"
@@ -386,39 +592,42 @@
       tbody.appendChild(tr);
     });
 
-    // 포커스 복원
-    if (focRow && focField) {
+    if (focRow && focFld) {
       const tr = tbody.querySelector(`tr[data-id="${focRow}"]`);
-      if (tr) tr.querySelector(`[data-field="${focField}"]`)?.focus();
+      if (tr) tr.querySelector(`[data-field="${focFld}"]`)?.focus();
     }
   }
 
   // ── API ────────────────────────────────────────────────
-  const post = url => fetch(url, {method:'POST'});
+  const post = url => fetch(url, {method: 'POST'});
 
-  function apiPlay(id)  { post(`/api/play/${id}`); }
-  function apiStop()    { post('/api/stop'); }
-  function apiMute()    { post('/api/mute'); }
-  function apiAdd()     { fetch('/api/songs',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.error)alert(d.error);}); }
-  function apiDel(id)   { fetch(`/api/songs/${id}`,{method:'DELETE'}); }
+  function apiPlay(id) { post(`/api/play/${id}`); }
+  function apiStop()   { post('/api/stop'); }
+  function apiMute()   { post('/api/mute'); }
+  function apiAdd()    { fetch('/api/songs', {method:'POST'}).then(r=>r.json()).then(d=>{if(d.error)alert(d.error);}); }
+  function apiDel(id)  { fetch(`/api/songs/${id}`, {method:'DELETE'}); }
 
   function save(id, field, value) {
     const body = {};
-    if (field==='bpm') {
-      const n=parseInt(value);
-      if (isNaN(n)||n<20||n>400) return;
-      body[field]=n;
+    if (field === 'bpm') {
+      const n = parseInt(value);
+      if (isNaN(n) || n < 20 || n > 400) return;
+      body[field] = n;
     } else {
       const v = value?.trim?.() ?? value;
-      if (field==='name' && !v) return;
-      body[field]=v;
+      if (field === 'name' && !v) return;
+      body[field] = v;
     }
-    const s=songs.find(s=>s.id===id);
-    if (s) s[field]=body[field];
-    fetch(`/api/songs/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const s = songs.find(s => s.id === id);
+    if (s) s[field] = body[field];
+    fetch(`/api/songs/${id}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
   }
 
-  function esc(s){
+  function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 </script>
