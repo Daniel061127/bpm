@@ -2,6 +2,12 @@ import platform
 import subprocess
 import mido
 
+# PyInstaller 번들 환경에서 백엔드 자동 탐색 실패 방지
+try:
+    mido.set_backend('mido.backends.rtmidi')
+except Exception:
+    pass
+
 _SYSEX_PROGRAMMER = [0x00, 0x20, 0x29, 0x02, 0x0D, 0x00, 0x7F]
 
 # macOS: "Launchpad Mini MK3 LPMiniMK3 MIDI Out"

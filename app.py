@@ -427,6 +427,17 @@ def api_volume():
     return jsonify({'ok': True})
 
 
+@app.route('/api/debug/midi')
+def api_debug_midi():
+    import mido
+    try:
+        inputs  = mido.get_input_names()
+        outputs = mido.get_output_names()
+    except Exception as e:
+        inputs, outputs = [], [f'ERROR: {e}']
+    return jsonify({'inputs': inputs, 'outputs': outputs})
+
+
 # ── 진입점 ───────────────────────────────────────────────
 if __name__ == '__main__':
     try:
