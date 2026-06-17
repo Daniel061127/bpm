@@ -412,6 +412,26 @@ def api_export():
     )
 
 
+@app.route('/api/diag')
+def api_diag():
+    import mido as _mido
+    from launchpad import midi_log
+    try:
+        in_ports  = _mido.get_input_names()
+        out_ports = _mido.get_output_names()
+    except Exception as e:
+        in_ports = out_ports = [f'ERROR: {e}']
+    return jsonify({
+        'connected':  launchpad.connected,
+        'sysex_ok':   launchpad.sysex_ok,
+        'in_name':    launchpad.in_name,
+        'out_name':   launchpad.out_name,
+        'in_ports':   in_ports,
+        'out_ports':  out_ports,
+        'midi_log':   midi_log,
+    })
+
+
 @app.route('/api/import', methods=['POST'])
 def api_import():
     global songs

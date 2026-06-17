@@ -1,5 +1,6 @@
 import platform
 import subprocess
+import threading
 import time
 import mido
 
@@ -10,10 +11,12 @@ except Exception:
 
 _SYSEX_PROGRAMMER = [0x00, 0x20, 0x29, 0x02, 0x0D, 0x00, 0x7F]
 
-# macOS: "Launchpad Mini MK3 LPMiniMK3 MIDI Out"
-# Windows: "LPMiniMK3 MIDI 0"
 _DEVICE_NAMES = ["Launchpad Mini MK3", "LPMiniMK3", "Launchpad"]
 _DEVICE_NAME  = "Launchpad Mini MK3"
+
+# 최근 수신 MIDI 메시지 로그 (진단용)
+midi_log = []
+_LOG_MAX = 30
 
 
 class Launchpad:
@@ -22,6 +25,9 @@ class Launchpad:
         self._outport  = None
         self._callback = None
         self.connected = False
+        self.in_name   = None
+        self.out_name  = None
+        self.sysex_ok  = False
 
     def _find_port(self, ports):
         for dev in _DEVICE_NAMES:
@@ -51,35 +57,46 @@ class Launchpad:
             return False
 
     def _handle_msg(self, msg):
+        global midi_log
+        entry = f"{msg.type} note={getattr(msg,'note','?')} vel={getattr(msg,'velocity','?')} ch={getattr(msg,'channel','?')}"
+        midi_log = ([entry] + midi_log)[:_LOG_MAX]
         if self.connected and self._callback:
             if msg.type == 'note_on' and msg.velocity > 0:
                 self._callback(msg.note)
 
     def _send_programmer_mode(self):
-        for attempt in range(3):
-            try:
-                time.sleep(0.05 * (attempt + 1))
-                self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
-                return
-            except Exception:
-                pass
+        """포트 오픈 후 백그라운드에서 SysEx를 반복 전송 (최대 10초)"""
+        def _retry():
+            deadline = time.time() + 10.0
+            interval = 0.2
+            while time.time() < deadline and self.connected:
+                try:
+                    self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
+                    self.sysex_ok = True
+                    return
+                except Exception:
+                    pass
+                time.sleep(interval)
+                interval = min(interval * 1.5, 1.0)
+        threading.Thread(target=_retry, daemon=True).start()
 
     def connect(self):
-        in_name  = self._find_port(mido.get_input_names())
-        out_name = self._find_port(mido.get_output_names())
+        in_ports  = mido.get_input_names()
+        out_ports = mido.get_output_names()
+        in_name   = self._find_port(in_ports)
+        out_name  = self._find_port(out_ports)
+
         if not in_name:
-            raise RuntimeError(
-                f"'{_DEVICE_NAME}' 를 찾을 수 없습니다. "
-                f"연결된 포트: {mido.get_input_names()}"
-            )
+            raise RuntimeError(f"포트 없음. 입력: {in_ports}")
         if not out_name:
-            raise RuntimeError(
-                f"'{_DEVICE_NAME}' 출력 포트를 찾을 수 없습니다. "
-                f"연결된 포트: {mido.get_output_names()}"
-            )
+            raise RuntimeError(f"출력 포트 없음. 출력: {out_ports}")
+
         self._inport  = mido.open_input(in_name, callback=self._handle_msg)
         self._outport = mido.open_output(out_name)
         self.connected = True
+        self.in_name   = in_name
+        self.out_name  = out_name
+        self.sysex_ok  = False
         self._send_programmer_mode()
         return in_name, out_name
 
@@ -91,6 +108,7 @@ class Launchpad:
 
     def stop(self):
         self.connected = False
+        self.sysex_ok  = False
         for port in (self._inport, self._outport):
             try:
                 if port:
