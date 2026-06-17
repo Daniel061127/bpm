@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""
-Launchpad BPM Controller - 웹 서버
-실행: python3 app.py  →  http://localhost:5001
-"""
 import json
 import os
+import sys
+import platform
 import threading
 import time
 from pathlib import Path
@@ -16,13 +14,12 @@ from config import (
     SONGS as DEFAULT_SONGS,
     FADE_PAD, STOP_PAD, MUTE_PAD, INST_STOP_PAD, FADE_DURATION,
     LED_OFF, LED_GREEN, LED_ORANGE, LED_BLUE, LED_RED,
-    RESERVED_PADS, ALL_GRID_PADS,
-    VOLUME_PADS,
+    RESERVED_PADS, ALL_GRID_PADS, VOLUME_PADS,
 )
 from metronome import Metronome
 from launchpad import Launchpad
 
-app = Flask(__name__)
+app      = Flask(__name__)
 app.config['SECRET_KEY'] = 'lp-bpm-2024'
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
 
@@ -32,8 +29,16 @@ launchpad = Launchpad()
 
 VOLUME_STEPS = len(VOLUME_PADS)
 
-# ── 곡 데이터 ─────────────────────────────────────────────
+# ── 곡 데이터 저장 경로 ───────────────────────────────────
 SONGS_FILE = Path(__file__).parent / 'songs.json'
+
+if getattr(sys, 'frozen', False):
+    if platform.system() == 'Windows':
+        _data_dir = Path(os.environ.get('APPDATA', '~')) / 'LaunchpadBPM'
+    else:
+        _data_dir = Path.home() / 'Library' / 'Application Support' / 'LaunchpadBPM'
+    _data_dir.mkdir(parents=True, exist_ok=True)
+    SONGS_FILE = _data_dir / 'songs.json'
 
 
 def load_songs():
@@ -47,24 +52,10 @@ def load_songs():
 
 
 def save_songs():
-    SONGS_FILE.write_text(
-        json.dumps(songs, ensure_ascii=False, indent=2), encoding='utf-8'
-    )
+    SONGS_FILE.write_text(json.dumps(songs, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
-import sys as _sys
-
-# PyInstaller 번들 실행 시 OS별 쓰기 가능한 경로 사용
-if getattr(_sys, 'frozen', False):
-    import platform as _platform
-    if _platform.system() == 'Windows':
-        _data_dir = Path(os.environ.get('APPDATA', '~')) / 'LaunchpadBPM'
-    else:
-        _data_dir = Path(os.path.expanduser('~/Library/Application Support/LaunchpadBPM'))
-    _data_dir.mkdir(parents=True, exist_ok=True)
-    SONGS_FILE = _data_dir / 'songs.json'
-
-songs = load_songs()
+songs   = load_songs()
 pad_map: dict = {}
 
 
@@ -73,7 +64,6 @@ def _available_pads():
 
 
 def reassign_pads():
-    """곡 목록 순서대로 패드를 재배정 (곡 1 → 첫 번째 패드)"""
     available = _available_pads()
     for i, s in enumerate(songs):
         s['pad'] = available[i] if i < len(available) else None
@@ -86,9 +76,7 @@ def rebuild_pad_map():
     pad_map.update({s['pad']: s for s in songs if s.get('pad') is not None})
 
 
-# 시작 시 패드 순서 동기화
 reassign_pads()
-
 
 # ── 공유 상태 ─────────────────────────────────────────────
 state = {
@@ -102,7 +90,6 @@ state = {
 }
 
 
-# ── 이벤트 전송 ───────────────────────────────────────────
 def emit_state():
     socketio.emit('state_change', {
         'status':          state['status'],
@@ -203,8 +190,7 @@ def on_pad(note):
     elif note == MUTE_PAD:
         do_mute()
     elif note in VOLUME_PADS:
-        idx = VOLUME_PADS.index(note)
-        state['volume'] = (idx + 1) / VOLUME_STEPS
+        state['volume'] = (VOLUME_PADS.index(note) + 1) / VOLUME_STEPS
         _update_volume_leds()
         emit_state()
     elif note in pad_map:
@@ -214,15 +200,7 @@ def on_pad(note):
 launchpad.set_callback(on_pad)
 
 
-def on_launchpad_disconnect():
-    state['launchpad'] = False
-    emit_state()
-
-
-launchpad.set_disconnect_callback(on_launchpad_disconnect)
-
-
-# ── 런치패드 LED 깜빡임 ───────────────────────────────────
+# ── LED 깜빡임 (대기 중 곡) ──────────────────────────────
 _blink_stop_evt = threading.Event()
 _blink_stop_evt.set()
 
@@ -247,7 +225,7 @@ def _stop_pad_blink():
     _blink_stop_evt.set()
 
 
-# ── 런치패드 연결 감시 루프 (2초마다) ────────────────────
+# ── 런치패드 연결 감시 (2초마다) ─────────────────────────
 def _reconnect_loop():
     while True:
         try:
@@ -255,14 +233,12 @@ def _reconnect_loop():
             hw = launchpad.is_available()
 
             if launchpad.connected and not hw:
-                print('[런치패드] 연결 끊김 감지')
                 launchpad.stop()
                 state['launchpad'] = False
                 _stop_pad_blink()
                 emit_state()
 
             elif not launchpad.connected and hw:
-                print('[런치패드] 재연결 시도...')
                 try:
                     launchpad.stop()
                     time.sleep(0.3)
@@ -271,11 +247,10 @@ def _reconnect_loop():
                     init_leds()
                     update_leds()
                     emit_state()
-                    print('[런치패드] 재연결 완료')
-                except Exception as e:
-                    print(f'[런치패드] 재연결 실패: {e}')
-        except Exception as e:
-            print(f'[reconnect_loop 오류] {e}')
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 threading.Thread(target=_reconnect_loop, daemon=True).start()
@@ -420,7 +395,7 @@ def api_mute():
 @app.route('/api/volume', methods=['POST'])
 def api_volume():
     data = request.get_json() or {}
-    vol = float(data.get('volume', 1.0))
+    vol  = float(data.get('volume', 1.0))
     state['volume'] = max(1 / VOLUME_STEPS, min(1.0, round(vol * VOLUME_STEPS) / VOLUME_STEPS))
     _update_volume_leds()
     emit_state()
@@ -448,7 +423,6 @@ def api_import():
             if not isinstance(s, dict) or 'name' not in s or 'bpm' not in s:
                 return jsonify({'error': '곡 데이터 형식 오류'}), 400
             s.setdefault('time_sig', '4/4')
-        # ID 재할당
         max_id = max((s.get('id', 0) for s in data), default=0)
         for s in data:
             if 'id' not in s:
@@ -467,36 +441,6 @@ def api_import():
         return jsonify({'ok': True, 'count': len(songs)})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-
-@app.route('/api/debug/midi')
-def api_debug_midi():
-    import mido
-    try:
-        inputs  = mido.get_input_names()
-        outputs = mido.get_output_names()
-    except Exception as e:
-        inputs, outputs = [], [f'ERROR: {e}']
-    return jsonify({
-        'inputs':    inputs,
-        'outputs':   outputs,
-        'connected': launchpad.connected,
-    })
-
-
-@app.route('/api/reconnect', methods=['POST'])
-def api_reconnect():
-    try:
-        launchpad.stop()
-        time.sleep(0.3)
-        launchpad.start()
-        state['launchpad'] = True
-        init_leds()
-        update_leds()
-        emit_state()
-        return jsonify({'ok': True})
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)})
 
 
 # ── 진입점 ───────────────────────────────────────────────
