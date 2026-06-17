@@ -3,7 +3,11 @@ import subprocess
 import mido
 
 _SYSEX_PROGRAMMER = [0x00, 0x20, 0x29, 0x02, 0x0D, 0x00, 0x7F]
-_DEVICE_NAME = "Launchpad Mini MK3"
+
+# macOS: "Launchpad Mini MK3 LPMiniMK3 MIDI Out"
+# Windows: "LPMiniMK3 MIDI 0" 또는 "Launchpad Mini MK3 0"
+_DEVICE_NAMES = ["Launchpad Mini MK3", "LPMiniMK3", "Launchpad"]
+_DEVICE_NAME  = "Launchpad Mini MK3"
 
 
 class Launchpad:
@@ -15,10 +19,19 @@ class Launchpad:
         self.connected      = False
 
     def _find_port(self, ports):
-        matches = [p for p in ports if _DEVICE_NAME in p]
-        if not matches:
-            return None
-        return matches[1] if len(matches) >= 2 else matches[0]
+        for dev in _DEVICE_NAMES:
+            matches = [p for p in ports if dev in p]
+            if not matches:
+                continue
+            # DAW 포트보다 MIDI 포트 우선
+            midi = [p for p in matches if 'MIDI' in p]
+            if midi:
+                return midi[0]
+            non_daw = [p for p in matches if 'DAW' not in p]
+            if non_daw:
+                return non_daw[0]
+            return matches[-1]
+        return None
 
     def is_available(self):
         """장치 실물 존재 여부 확인 (macOS: ioreg USB 체크, Windows/기타: mido 포트 목록)"""
@@ -54,7 +67,10 @@ class Launchpad:
             )
         self._inport  = mido.open_input(in_name, callback=self._handle_msg)
         self._outport = mido.open_output(out_name)
-        self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
+        try:
+            self._outport.send(mido.Message('sysex', data=_SYSEX_PROGRAMMER))
+        except Exception:
+            pass  # WinMM에서 SysEx 실패해도 기본 기능은 동작
         self.connected = True
         return in_name, out_name
 
